@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from unittest import TestCase
 
 import vobject
@@ -52,6 +52,7 @@ VTODO_GRAND_CHILD = """BEGIN:VTODO\r
 COMPLETED:20201212T172558Z\r
 CREATED:20201212T092155Z\r
 DTSTAMP:20201212T172830Z\r
+DUE;VALUE=DATE:20201224\r
 LAST-MODIFIED:20201212T172558Z\r
 RELATED-TO;RELTYPE=PARENT:CHILD-PARENT\r
 STATUS:NEEDS-ACTION\r
@@ -104,13 +105,16 @@ class CalDAVTest(TestCase):
     def test_translate_from_vtodo(self):
         DESCRIPTION = Translator.fields[1]
         self.assertEqual(DESCRIPTION.dav_name, 'description')
-        todo = self._get_todo(VTODO_ROOT)
-        self.assertEqual(todo.instance.vtodo.serialize(), VTODO_ROOT)
+        todo = self._get_todo(VTODO_GRAND_CHILD)
+        self.assertEqual(todo.instance.vtodo.serialize(), VTODO_GRAND_CHILD)
+        self.assertEqual(date(2020, 12, 24),
+                         todo.instance.vtodo.contents['due'][0].value)
         uid = UID_FIELD.get_dav(todo)
         self.assertTrue(isinstance(uid, str), "should be str is %r" % uid)
         self.assertEqual(uid, UID_FIELD.get_dav(vtodo=todo.instance.vtodo))
         task = Task(uid, Mock())
         Translator.fill_task(todo, task, NAMESPACE)
+        self.assertEqual('date', task.get_due_date().accuracy.value)
         vtodo = Translator.fill_vtodo(task, todo.parent.name, NAMESPACE)
         for field in Translator.fields:
             if field.dav_name in DAV_IGNORE:

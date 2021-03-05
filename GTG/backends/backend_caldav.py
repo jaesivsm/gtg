@@ -475,12 +475,12 @@ class DateField(Field):
 
     @staticmethod
     def _normalize(value):
-        if isinstance(value, Date):
-            value = value.datetime
         try:
             if value.year == 9999:
                 return None
-            return value.replace(microsecond=0, tzinfo=None)
+            if getattr(value, 'microsecond'):
+                value = value.replace(microsecond=0, tzinfo=None)
+            return value
         except AttributeError:
             return value
 
@@ -495,17 +495,17 @@ class DateField(Field):
         """Transforming to local naive,
         if original value MAY be naive and IS assuming UTC"""
         value = super().get_dav(todo, vtodo)
-        if not isinstance(value, datetime):
-            try:
-                value = Date(value).datetime
-            except ValueError:
-                logger.error("Coudln't translate value %r", value)
-                return
-        if value.tzinfo:  # if timezoned, translate to UTC
-            value = value - value.utcoffset()
-        value = value.replace(tzinfo=LOCAL_TIMEZONE)  # zoning to local
-        value = value + value.utcoffset()  # adding local offset
-        return self._normalize(value)  # return naive
+        if isinstance(value, datetime):
+            if value.tzinfo:  # if timezoned, translate to UTC
+                value = value - value.utcoffset()
+            value = value.replace(tzinfo=LOCAL_TIMEZONE)  # zoning to local
+            value = value + value.utcoffset()  # adding local offset
+            value = self._normalize(value)  # return naive
+        try:
+            return Date(value)
+        except ValueError:
+            logger.error("Coudln't translate value %r", value)
+            return Date.no_date()
 
     def get_gtg(self, task: Task, namespace: str = None):
         return self._normalize(super().get_gtg(task, namespace))
