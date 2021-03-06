@@ -52,18 +52,22 @@ STRINGS = {
 }
 
 LOOKUP = {
+    NOW: NOW,
     'now': NOW,
     # Translators: Used in parsing, made lowercased in code
     _('now').lower(): NOW,
+    SOON: SOON,
     'soon': SOON,
     # Translators: Used in parsing, made lowercased in code
     _('soon').lower(): SOON,
+    SOMEDAY: SOMEDAY,
     'later': SOMEDAY,
     # Translators: Used in parsing, made lowercased in code
     _('later').lower(): SOMEDAY,
     'someday': SOMEDAY,
     # Translators: Used in parsing, made lowercased in code
     _('someday').lower(): SOMEDAY,
+    NODATE: NODATE,
     '': NODATE,
 }
 # functions giving absolute dates for fuzzy dates + no date
@@ -103,90 +107,86 @@ class Date:
       - a date or Date instance, or
       - a string containing a locale format date.
     """
-    DEFAULT_HOUR = 12
-    DEFAULT_MINUTE = 0
-    DEFAULT_SECOND = 0
+
+    __slots__ = ['dt_value', '_accuracy']
 
     def __init__(self, value=None):
-        self.datetime = None
-        self.accuracy = None  # datetime, date, or fuzzy
-        self.fuzzy = None
+        self.dt_value = None
         if value is None or value == '':
-            self.fuzzy = NODATE
-            self.datetime = FUNCS[NODATE]()
-            self.accuracy = Accuracy.fuzzy
-        elif isinstance(value, datetime):
-            if value.tzinfo:
-                self.accuracy = Accuracy.timezone
-            else:
-                self.accuracy = Accuracy.datetime
-            self.datetime = value
-        elif isinstance(value, date):
-            self.accuracy = Accuracy.date
-            self.datetime = datetime(
-                value.year, value.month, value.day,
-                self.DEFAULT_HOUR, self.DEFAULT_MINUTE, self.DEFAULT_SECOND)
+            self.dt_value = NODATE
+        elif isinstance(value, (date, datetime)):
+            self.dt_value = value
         elif isinstance(value, Date):
             # Copy internal values from other Date object
-            self.accuracy = value.accuracy
-            self.datetime = value.datetime
-            self.fuzzy = value.fuzzy
+            self.dt_value = value.dt_value
         elif isinstance(value, str):
-            done = False
             for date_format, accuracy in DATE_FORMATS:
                 try:
-                    self.datetime = datetime.strptime(value, date_format)
-                    self.accuracy = accuracy
-                    done = True
+                    self.dt_value = datetime.strptime(value, date_format)
+                    if accuracy is Accuracy.date:
+                        self.dt_value = self.dt_value.date()
                     break
                 except ValueError:
                     pass
-            if not done:
+            if self.dt_value is None:
                 try:  # it must be a fuzzy date
-                    value = LOOKUP[str(value).lower()]
-                    self.fuzzy = value
-                    self.datetime = FUNCS[value]()
-                    self.accuracy = Accuracy.fuzzy
-                    done = True
+                    self.dt_value = LOOKUP[str(value).lower()]
                 except KeyError:
                     pass
-            if not done:
+            if self.dt_value is None:
                 raise ValueError(f"Unknown value for date: '{value}'")
-        elif value in FUNCS:
-            self.fuzzy = value
-            self.datetime = FUNCS[value]()
-            self.accuracy = Accuracy.fuzzy
+        elif value in LOOKUP:
+            self.datetime = LOOKUP[value]
         else:
             raise ValueError(f"Unknown value for date: '{value}'")
+
+    @property
+    def accuracy(self):
+        if isinstance(self.dt_value, datetime):
+            if self.dt_value.tzinfo:
+                return Accuracy.timezone
+            return Accuracy.datetime
+        if isinstance(self.dt_value, date):
+            return Accuracy.date
+        return Accuracy.fuzzy
 
     def date(self):
         """ Map date into real date, i.e. convert fuzzy dates """
         return self.datetime.date()
 
-    def dt_by_accuracy(self, accuracy: str = None):
-        accuracy, datetime = accuracy or self.accuracy, self.datetime
-        if accuracy == Accuracy.timezone:
-            return datetime
-        if accuracy == Accuracy.datetime and datetime.tzinfo:
-            return datetime.astimezone(LOCAL_TIMEZONE).replace(tzinfo=None)
-        if accuracy == Accuracy.datetime:
-            return datetime
-        if accuracy == Accuracy.date:
-            return self.date()
-        return self.date()  # fuzzy ?
+    @staticmethod
+    def _dt_by_accuracy(dt_value, accuracy: Accuracy,
+                        wanted_accuracy: Accuracy):
+        if wanted_accuracy is Accuracy.timezone:
+            if accuracy is Accuracy.date:
+                return datetime(dt_value.year, dt_value.month, dt_value.day,
+                                tzinfo=UTC)
+            dt_value = dt_value.replace(tzinfo=LOCAL_TIMEZONE)
+            return (dt_value - dt_value.utcoffset()).replace(tzinfo=UTC)
+        if wanted_accuracy is Accuracy.datetime:
+            if accuracy is Accuracy.date:
+                return datetime(dt_value.year, dt_value.month, dt_value.day)
+            # Accuracy.timezone:
+            return dt_value.astimezone(LOCAL_TIMEZONE).replace(tzinfo=None)
+        if wanted_accuracy is Accuracy.date:
+            return dt_value.date()
+
+    def dt_by_accuracy(self, wanted_accuracy: Accuracy):
+        if wanted_accuracy == self.accuracy:
+            return self.dt_value
+        if self.accuracy is Accuracy.fuzzy:
+            return self._dt_by_accuracy(FUNCS[self.dt_value](),
+                                        self.accuracy, wanted_accuracy)
+        return self._dt_by_accuracy(self.dt_value, self.accuracy, wanted_accuracy)
 
     def _cast_for_operation(self, other, operation='comparison'):
         if isinstance(other, timedelta):
             if operation == 'comparison':
                 raise ValueError("can't compare with %r" % other)
-            return self.dt_by_accuracy(), other
-        other = self.__class__(other)
-        accuracies = {self.accuracy, other.accuracy,
-                      None, Accuracy.timezone}  # ensuring return
-        for op_accuracy in Accuracy:
-            if op_accuracy in accuracies:
-                return (self.dt_by_accuracy(op_accuracy),
-                        other.dt_by_accuracy(op_accuracy))
+            return self.dt_value, other
+        if not isinstance(other, self.__class__):
+            other = self.__class__(other)
+        return self.dt_value, other.dt_by_accuracy(self.accuracy)
 
     def __add__(self, other):
         a, b = self._cast_for_operation(other, 'operation')
@@ -212,8 +212,6 @@ class Date:
 
     def __eq__(self, other):
         other = self.__class__(other)
-        if self.is_fuzzy and other.is_fuzzy:
-            return self.fuzzy == other.fuzzy
         a, b = self._cast_for_operation(other)
         return a == b
 
@@ -229,41 +227,27 @@ class Date:
         return a >= b
 
     def __str__(self):
-        if self.fuzzy is not None:
+        if self.accuracy is Accuracy.fuzzy:
             return STRINGS[self.fuzzy]
-        return self.datetime.date().isoformat()
+        return self.dt_value.isoformat()
 
     def __repr__(self):
         return "GTG_Date(%s)" % str(self)
 
     def xml_str(self):
         """ Representation for XML - fuzzy dates are in English """
-        if self.fuzzy is not None:
-            return ENGLISH_STRINGS[self.fuzzy]
-        return self.datetime.date().isoformat()
+        if self.accuracy is Accuracy.fuzzy:
+            return ENGLISH_STRINGS[self.dt_value]
+        return self.dt_by_accuracy(Accuracy.date).isoformat()
 
     def __bool__(self):
-        return self.fuzzy != NODATE
-
-    def __getattr__(self, name):
-        """ Provide access to the wrapped datetime.date """
-        try:
-            return self.__dict__[name]
-        except KeyError:
-            return getattr(self.date(), name)
-
-    def is_fuzzy(self):
-        """
-        True if the Date is one of the fuzzy values:
-        now, soon, someday or no_date
-        """
-        return self.fuzzy is not None
+        return self.dt_value != NODATE
 
     def days_left(self):
         """ Return the difference between the date and today in dates """
-        if self.fuzzy == NODATE:
+        if self.dt_value == NODATE:
             return None
-        return (self.date() - date.today()).days
+        return (self.dt_by_accuracy(Accuracy.date) - date.today()).days
 
     @staticmethod
     def today():
@@ -428,8 +412,9 @@ class Date:
 
     def _parse_only_month_day_for_recurrency(self, string, newtask=True):
         """ Parse next Xth day in month from a certain date"""
+        self_date = self.dt_by_accuracy(Accuracy.date)
         if not newtask:
-            self += timedelta(1)
+            self_date += timedelta(1)
         try:
             mday = int(string)
             if not 1 <= mday <= 31 or string.startswith('0'):
@@ -438,17 +423,17 @@ class Date:
             return None
 
         try:
-            result = self.replace(day=mday)
+            result = self_date.replace(day=mday)
         except ValueError:
             result = None
 
-        if result is None or result <= self:
-            if self.month == 12:
+        if result is None or result <= self_date:
+            if self_date.month == 12:
                 next_month = 1
-                next_year = self.year + 1
+                next_year = self_date.year + 1
             else:
-                next_month = self.month + 1
-                next_year = self.year
+                next_month = self_date.month + 1
+                next_year = self_date.year
 
             try:
                 result = date(next_year, next_month, mday)
@@ -460,20 +445,21 @@ class Date:
     def _parse_numerical_format_for_recurrency(self, string, newtask=True):
         """ Parse numerical formats like %Y/%m/%d,
         %Y%m%d or %m%d and calculated from a certain date"""
+        self_date = self.dt_by_accuracy(Accuracy.date)
         result = None
         if not newtask:
-            self += timedelta(1)
+            self_date += timedelta(1)
         for fmt in ['%Y/%m/%d', '%Y%m%d', '%m%d']:
             try:
                 result = datetime.strptime(string, fmt).date()
                 if '%Y' not in fmt:
                     # If the day has passed, assume the next year
-                    if (result.month > self.month or
-                        (result.month == self.month and
-                         result.day >= self.day)):
-                        year = self.year
+                    if (result.month > self_date.month or
+                        (result.month == self_date.month and
+                         result.day >= self_date.day)):
+                        year = self_date.year
                     else:
-                        year = self.year + 1
+                        year = self_date.year + 1
                     result = result.replace(year=year)
             except ValueError:
                 continue
@@ -487,6 +473,7 @@ class Date:
             newtask (bool, optional): depending on the task if it is a new one or not, the offset changes
         """
         # accepted date formats
+        self_date = self.dt_by_accuracy(Accuracy.date)
         formats = {
             # change the offset depending on the task.
             'day': 0 if newtask else 1,
@@ -498,12 +485,12 @@ class Date:
             'week': 0 if newtask else 7,
             # Translators: Used in recurring parsing, made lowercased in code
             _('week').lower(): 0 if newtask else 7,
-            'month': 0 if newtask else calendar.mdays[self.month],
+            'month': 0 if newtask else calendar.mdays[self_date.month],
             # Translators: Used in recurring parsing, made lowercased in code
-            _('month').lower(): 0 if newtask else calendar.mdays[self.month],
-            'year': 0 if newtask else 365 + int(calendar.isleap(self.year)),
+            _('month').lower(): 0 if newtask else calendar.mdays[self_date.month],
+            'year': 0 if newtask else 365 + int(calendar.isleap(self_date.year)),
             # Translators: Used in recurring parsing, made lowercased in code
-            _('year').lower(): 0 if newtask else 365 + int(calendar.isleap(self.year)),
+            _('year').lower(): 0 if newtask else 365 + int(calendar.isleap(self_date.year)),
         }
 
         # add week day names in the current locale
@@ -516,7 +503,7 @@ class Date:
             ("Saturday", _("Saturday")),
             ("Sunday", _("Sunday")),
         ]):
-            offset = i - self.weekday() + 7 * int(i <= self.weekday())
+            offset = i - self_date.weekday() + 7 * int(i <= self_date.weekday())
             formats[english.lower()] = offset
             formats[local.lower()] = offset
 
@@ -524,7 +511,7 @@ class Date:
         if offset is None:
             return None
         else:
-            return self + timedelta(offset)
+            return self_date + timedelta(offset)
 
     def parse_from_date(self, string, newtask=False):
         """parse_from_date returns the date from a string
@@ -557,7 +544,7 @@ class Date:
         Close dates => Today, Tomorrow, In X days
         Other => with locale dateformat, stripping year for this year
         """
-        if self.fuzzy is not None:
+        if self.accuracy is Accuracy.fuzzy:
             return STRINGS[self.fuzzy]
 
         days_left = self.days_left()
