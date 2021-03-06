@@ -26,6 +26,7 @@ Date.parse() parses all possible representations of a date. """
 from enum import Enum
 import calendar
 from datetime import datetime, date, timedelta, timezone
+from dateutil.tz import UTC
 import locale
 
 from gettext import gettext as _, ngettext
@@ -136,7 +137,7 @@ class Date:
             if self.dt_value is None:
                 raise ValueError(f"Unknown value for date: '{value}'")
         elif value in LOOKUP:
-            self.datetime = LOOKUP[value]
+            self.dt_value = LOOKUP[value]
         else:
             raise ValueError(f"Unknown value for date: '{value}'")
 
@@ -152,7 +153,7 @@ class Date:
 
     def date(self):
         """ Map date into real date, i.e. convert fuzzy dates """
-        return self.datetime.date()
+        return self.dt_by_accuracy(Accuracy.date)
 
     @staticmethod
     def _dt_by_accuracy(dt_value, accuracy: Accuracy,
@@ -228,7 +229,7 @@ class Date:
 
     def __str__(self):
         if self.accuracy is Accuracy.fuzzy:
-            return STRINGS[self.fuzzy]
+            return STRINGS[self.dt_value]
         return self.dt_value.isoformat()
 
     def __repr__(self):
@@ -248,6 +249,9 @@ class Date:
         if self.dt_value == NODATE:
             return None
         return (self.dt_by_accuracy(Accuracy.date) - date.today()).days
+
+    def is_fuzzy(self):
+        return self.accuracy is Accuracy.fuzzy
 
     @staticmethod
     def today():
@@ -545,7 +549,7 @@ class Date:
         Other => with locale dateformat, stripping year for this year
         """
         if self.accuracy is Accuracy.fuzzy:
-            return STRINGS[self.fuzzy]
+            return STRINGS[self.dt_value]
 
         days_left = self.days_left()
         if days_left == 0:
@@ -567,7 +571,7 @@ class Date:
                 # if it's in less than a year, don't show the year field
                 locale_format = locale_format.replace('/%Y', '')
                 locale_format = locale_format.replace('.%Y', '.')
-            return self.datetime.strftime(locale_format)
+            return self.dt_by_accuracy(Accuracy.date).strftime(locale_format)
 
 
 _GLOBAL_DATE_NOW = Date(NOW)
