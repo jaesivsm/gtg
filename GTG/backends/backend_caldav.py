@@ -32,7 +32,7 @@ import caldav
 from GTG.backends.backend_signals import BackendSignals
 from GTG.backends.generic_backend import GenericBackend
 from GTG.backends.periodic_import_backend import PeriodicImportBackend
-from GTG.core.dates import LOCAL_TIMEZONE, Date
+from GTG.core.dates import LOCAL_TIMEZONE, Date, Accuracy
 from GTG.core.interruptible import interruptible
 from GTG.core.task import DisabledSyncCtx, Task
 from vobject import iCalendar
@@ -479,16 +479,23 @@ class DateField(Field):
             if value.year == 9999:
                 return None
             if getattr(value, 'microsecond'):
-                value = value.replace(microsecond=0, tzinfo=None)
+                value = value.replace(microsecond=0)
             return value
         except AttributeError:
             return value
 
     def write_dav(self, vtodo: iCalendar, value):
         "Writing datetime as UTC naive"
-        if not value.tzinfo:  # assumring is LOCAL_TIMEZONEd
-            value = value.replace(tzinfo=LOCAL_TIMEZONE)
-        value = (value - value.utcoffset()).replace(tzinfo=UTC)
+        if isinstance(value, Date) and value.accuracy in {Accuracy.timezone,
+                                                          Accuracy.datetime,
+                                                          Accuracy.date}:
+            value = value.dt_value
+        if isinstance(value, datetime):
+            value = self._normalize(value)
+            if not value.tzinfo:  # no tzinfo, considering local
+                value = value.replace(tzinfo=LOCAL_TIMEZONE)
+            if value.tzinfo != UTC:
+                value = (value - value.utcoffset()).replace(tzinfo=UTC)
         return super().write_dav(vtodo, value)
 
     def get_dav(self, todo=None, vtodo=None):

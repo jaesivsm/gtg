@@ -70,12 +70,14 @@ LOOKUP = {
     _('someday').lower(): SOMEDAY,
     NODATE: NODATE,
     '': NODATE,
+    None: NODATE,
+    'None': NODATE,
 }
 # functions giving absolute dates for fuzzy dates + no date
 FUNCS = {NOW: datetime.now,
-         SOON: lambda: datetime.now() + timedelta(days=15),
-         SOMEDAY: lambda: datetime.max,
-         NODATE: lambda: datetime.max - timedelta(days=1)}
+         SOON: lambda: date.today() + timedelta(days=15),
+         SOMEDAY: lambda: date.max,
+         NODATE: lambda: date.max - timedelta(days=1)}
 
 
 class Accuracy(Enum):  # from less accurate from the most
@@ -113,13 +115,13 @@ class Date:
 
     def __init__(self, value=None):
         self.dt_value = None
-        if value is None or value == '':
-            self.dt_value = NODATE
-        elif isinstance(value, (date, datetime)):
+        if isinstance(value, (date, datetime)):
             self.dt_value = value
         elif isinstance(value, Date):
             # Copy internal values from other Date object
             self.dt_value = value.dt_value
+        elif value in ['None', None, '']:
+            self.dt_value = NODATE
         elif isinstance(value, str):
             for date_format, accuracy in DATE_FORMATS:
                 try:
@@ -162,23 +164,33 @@ class Date:
             if accuracy is Accuracy.date:
                 return datetime(dt_value.year, dt_value.month, dt_value.day,
                                 tzinfo=UTC)
-            dt_value = dt_value.replace(tzinfo=LOCAL_TIMEZONE)
-            return (dt_value - dt_value.utcoffset()).replace(tzinfo=UTC)
+            assert accuracy is Accuracy.datetime, f"{accuracy} wasn't expected"
+            # assuming local timezone
+            return dt_value.replace(tzinfo=LOCAL_TIMEZONE)
         if wanted_accuracy is Accuracy.datetime:
             if accuracy is Accuracy.date:
                 return datetime(dt_value.year, dt_value.month, dt_value.day)
-            # Accuracy.timezone:
-            return dt_value.astimezone(LOCAL_TIMEZONE).replace(tzinfo=None)
+            assert accuracy is Accuracy.timezone, f"{accuracy} wasn't expected"
+            # returning UTC naive
+            dt_value = dt_value.replace(tzinfo=LOCAL_TIMEZONE)
+            return (dt_value - dt_value.utcoffset()).replace(tzinfo=None)
         if wanted_accuracy is Accuracy.date:
             return dt_value.date()
+        raise AssertionError(f"Shouldn't get in that position for '{dt_value}'"
+                             f" actual {accuracy.value} "
+                             f"and wanted {wanted_accuracy.value}")
 
     def dt_by_accuracy(self, wanted_accuracy: Accuracy):
         if wanted_accuracy == self.accuracy:
             return self.dt_value
         if self.accuracy is Accuracy.fuzzy:
-            return self._dt_by_accuracy(FUNCS[self.dt_value](),
-                                        self.accuracy, wanted_accuracy)
-        return self._dt_by_accuracy(self.dt_value, self.accuracy, wanted_accuracy)
+            gtg_date = self.__class__(FUNCS[self.dt_value]())
+            if gtg_date.accuracy is wanted_accuracy:
+                return gtg_date.dt_value
+            return self._dt_by_accuracy(gtg_date.dt_value, gtg_date.accuracy,
+                                        wanted_accuracy)
+        return self._dt_by_accuracy(self.dt_value, self.accuracy,
+                                    wanted_accuracy)
 
     def _cast_for_operation(self, other, operation='comparison'):
         if isinstance(other, timedelta):
@@ -187,21 +199,25 @@ class Date:
             return self.dt_value, other
         if not isinstance(other, self.__class__):
             other = self.__class__(other)
-        return self.dt_value, other.dt_by_accuracy(self.accuracy)
+        if self.accuracy is other.accuracy:
+            return self.dt_value, other.dt_value
+        for accuracy in Accuracy.date, Accuracy.datetime, Accuracy.timezone:
+            if accuracy in {self.accuracy, other.accuracy}:
+                return (self.dt_by_accuracy(accuracy),
+                        other.dt_by_accuracy(accuracy))
+        return (self.dt_by_accuracy(Accuracy.fuzzy),
+                other.dt_by_accuracy(Accuracy.fuzzy))
 
     def __add__(self, other):
         a, b = self._cast_for_operation(other, 'operation')
         return a + b
 
-    __radd__ = __add__
-
     def __sub__(self, other):
         a, b = self._cast_for_operation(other, 'operation')
         return a - b
 
-    def __rsub__(self, other):
-        a, b = self._cast_for_operation(other, 'operation')
-        return a - b
+    __radd__ = __add__
+    __rsub__ = __sub__
 
     def __lt__(self, other):
         a, b = self._cast_for_operation(other)
@@ -212,7 +228,6 @@ class Date:
         return a <= b
 
     def __eq__(self, other):
-        other = self.__class__(other)
         a, b = self._cast_for_operation(other)
         return a == b
 
