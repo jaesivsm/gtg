@@ -248,7 +248,7 @@ class Date:
         return self.dt_value.isoformat()
 
     def __repr__(self):
-        return "GTG_Date(%s)" % str(self)
+        return f"<Date({self})>"
 
     def xml_str(self):
         """ Representation for XML - fuzzy dates are in English """

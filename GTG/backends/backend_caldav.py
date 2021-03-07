@@ -24,7 +24,7 @@ import re
 import logging
 from hashlib import md5
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, date
 from dateutil.tz import UTC
 from gettext import gettext as _
 
@@ -446,7 +446,7 @@ class Field:
         dav = self.get_dav(todo, vtodo)
         gtg = self.get_gtg(task, namespace)
         if dav != gtg:
-            logger.debug('%r has differing values %r!=%r', self, gtg, dav)
+            logger.debug('%r has differing values (DAV) %r!=%r (GTG)', self, gtg, dav)
             return False
         return True
 
@@ -492,21 +492,18 @@ class DateField(Field):
             value = value.dt_value
         if isinstance(value, datetime):
             value = self._normalize(value)
-            if not value.tzinfo:  # no tzinfo, considering local
-                value = value.replace(tzinfo=LOCAL_TIMEZONE)
-            if value.tzinfo != UTC:
+            if value.tzinfo and value.tzinfo != UTC:
                 value = (value - value.utcoffset()).replace(tzinfo=UTC)
-        return super().write_dav(vtodo, value)
+        vtodo_val = super().write_dav(vtodo, value)
+        if isinstance(value, date) and not isinstance(value, datetime):
+            vtodo_val.params['VALUE'] = ['DATE']
+        return vtodo_val
 
     def get_dav(self, todo=None, vtodo=None):
         """Transforming to local naive,
         if original value MAY be naive and IS assuming UTC"""
         value = super().get_dav(todo, vtodo)
-        if isinstance(value, datetime):
-            if value.tzinfo:  # if timezoned, translate to UTC
-                value = value - value.utcoffset()
-            value = value.replace(tzinfo=LOCAL_TIMEZONE)  # zoning to local
-            value = value + value.utcoffset()  # adding local offset
+        if isinstance(value, (date, datetime)):
             value = self._normalize(value)  # return naive
         try:
             return Date(value)
@@ -515,7 +512,13 @@ class DateField(Field):
             return Date.no_date()
 
     def get_gtg(self, task: Task, namespace: str = None):
-        return self._normalize(super().get_gtg(task, namespace))
+        gtg_date = super().get_gtg(task, namespace)
+        if isinstance(gtg_date, Date):
+            if gtg_date.accuracy in {Accuracy.date, Accuracy.timezone,
+                                     Accuracy.datetime}:
+                return Date(self._normalize(gtg_date.dt_value))
+            return gtg_date
+        return Date(self._normalize(gtg_date))
 
 
 class Status(Field):
