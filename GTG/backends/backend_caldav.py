@@ -446,7 +446,8 @@ class Field:
         dav = self.get_dav(todo, vtodo)
         gtg = self.get_gtg(task, namespace)
         if dav != gtg:
-            logger.debug('%r has differing values (DAV) %r!=%r (GTG)', self, gtg, dav)
+            logger.debug('%r has differing values (DAV) %r!=%r (GTG)',
+                         self, gtg, dav)
             return False
         return True
 
@@ -492,8 +493,10 @@ class DateField(Field):
             value = value.dt_value
         if isinstance(value, datetime):
             value = self._normalize(value)
-            if value.tzinfo and value.tzinfo != UTC:
-                value = (value - value.utcoffset()).replace(tzinfo=UTC)
+            if not value.tzinfo:  # considering naive is local tz
+                value = value.replace(tzinfo=LOCAL_TIMEZONE)
+            if value.tzinfo != UTC:  # forcing UTC for value to write on dav
+                value = (value + value.utcoffset()).replace(tzinfo=UTC)
         vtodo_val = super().write_dav(vtodo, value)
         if isinstance(value, date) and not isinstance(value, datetime):
             vtodo_val.params['VALUE'] = ['DATE']
@@ -504,7 +507,7 @@ class DateField(Field):
         if original value MAY be naive and IS assuming UTC"""
         value = super().get_dav(todo, vtodo)
         if isinstance(value, (date, datetime)):
-            value = self._normalize(value)  # return naive
+            value = self._normalize(value)
         try:
             return Date(value)
         except ValueError:
