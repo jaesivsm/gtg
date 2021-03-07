@@ -163,17 +163,16 @@ class Date:
         if wanted_accuracy is Accuracy.timezone:
             if accuracy is Accuracy.date:
                 return datetime(dt_value.year, dt_value.month, dt_value.day,
-                                tzinfo=UTC)
+                                tzinfo=LOCAL_TIMEZONE)
             assert accuracy is Accuracy.datetime, f"{accuracy} wasn't expected"
-            # assuming local timezone
+            # datetime is naive and assuming local timezone
             return dt_value.replace(tzinfo=LOCAL_TIMEZONE)
         if wanted_accuracy is Accuracy.datetime:
             if accuracy is Accuracy.date:
                 return datetime(dt_value.year, dt_value.month, dt_value.day)
             assert accuracy is Accuracy.timezone, f"{accuracy} wasn't expected"
             # returning UTC naive
-            dt_value = dt_value.replace(tzinfo=LOCAL_TIMEZONE)
-            return (dt_value - dt_value.utcoffset()).replace(tzinfo=None)
+            return dt_value.astimezone(LOCAL_TIMEZONE).replace(tzinfo=None)
         if wanted_accuracy is Accuracy.date:
             return dt_value.date()
         raise AssertionError(f"Shouldn't get in that position for '{dt_value}'"

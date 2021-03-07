@@ -128,18 +128,22 @@ class CalDAVTest(TestCase):
         self.assertFalse(DESCRIPTION.is_equal(task, NAMESPACE, todo))
 
     def test_translate_from_task(self):
+        now, today = datetime.now(), date.today()
         task = Task('uuid', Mock())
         task.set_title('holy graal')
         task.set_text('the knights who says ni')
         task.set_recurring(True, 'other-day')
-        task.set_start_date(datetime.now())
+        task.set_start_date(today)
         task.set_due_date('soon')
-        task.set_closed_date(date.today())
+        task.set_closed_date(now)
         vtodo = Translator.fill_vtodo(task, 'My Calendar Name', NAMESPACE)
         for field in Translator.fields:
             self.assertTrue(field.is_equal(task, NAMESPACE, vtodo=vtodo.vtodo),
                             '%r has differing values' % field)
-        vtodo.serialize()
+        del vtodo.vtodo.contents['due']
+        serialized = vtodo.serialize()
+        self.assertTrue(f"DTSTART;VALUE=DATE:{today.strftime('%Y%m%d')}"
+                        in serialized, f"missing from {serialized}")
 
     def test_translate(self):
         datastore = DataStore()

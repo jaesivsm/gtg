@@ -496,7 +496,7 @@ class DateField(Field):
             if not value.tzinfo:  # considering naive is local tz
                 value = value.replace(tzinfo=LOCAL_TIMEZONE)
             if value.tzinfo != UTC:  # forcing UTC for value to write on dav
-                value = (value + value.utcoffset()).replace(tzinfo=UTC)
+                value = (value - value.utcoffset()).replace(tzinfo=UTC)
         vtodo_val = super().write_dav(vtodo, value)
         if isinstance(value, date) and not isinstance(value, datetime):
             vtodo_val.params['VALUE'] = ['DATE']
@@ -522,6 +522,18 @@ class DateField(Field):
                 return Date(self._normalize(gtg_date.dt_value))
             return gtg_date
         return Date(self._normalize(gtg_date))
+
+
+class UTCDateTimeField(DateField):
+
+    def get_gtg(self, task: Task, namespace: str = None):
+        gtg_date = super().get_gtg(task, namespace)
+        return Date(gtg_date.dt_by_accuracy(Accuracy.timezone))
+
+    def write_dav(self, vtodo: iCalendar, value):
+        if isinstance(value, Date):
+            value = value.dt_by_accuracy(Accuracy.timezone)
+        return super().write_dav(vtodo, value)
 
 
 class Status(Field):
@@ -887,18 +899,20 @@ SORT_ORDER = OrderField('x-apple-sort-order', '', '')
 
 class Translator:
     GTG_PRODID = "-//Getting Things Gnome//CalDAV Backend//EN"
-    DTSTAMP_FIELD = DateField('dtstamp', '', '')
+    DTSTAMP_FIELD = UTCDateTimeField('dtstamp', '', '')
     fields = [Field('summary', 'get_title', 'set_title'),
               Description('description', 'get_excerpt', 'set_text'),
               DateField('due', 'get_due_date_constraint', 'set_due_date'),
-              DateField('completed', 'get_closed_date', 'set_closed_date'),
+              UTCDateTimeField(
+                  'completed', 'get_closed_date', 'set_closed_date'),
               DTSTART,
               Recurrence('rrule', 'get_recurring_term', 'set_recurring'),
               Status('status', 'get_status', 'set_status'),
               PercentComplete('percent-complete', 'get_status', ''),
               SEQUENCE, UID_FIELD, CATEGORIES, CHILDREN_FIELD,
-              DateField('created', 'get_added_date', 'set_added_date'),
-              DateField('last-modified', 'get_modified', 'set_modified')]
+              UTCDateTimeField('created', 'get_added_date', 'set_added_date'),
+              UTCDateTimeField(
+                  'last-modified', 'get_modified', 'set_modified')]
 
     @classmethod
     def _get_new_vcal(cls) -> iCalendar:
