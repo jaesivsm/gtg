@@ -76,7 +76,7 @@ LOOKUP = {
 # functions giving absolute dates for fuzzy dates + no date
 FUNCS = {NOW: datetime.now,
          SOON: lambda: date.today() + timedelta(days=15),
-         SOMEDAY: lambda: date.max,
+         SOMEDAY: lambda: date.today() + timedelta(days=365),
          NODATE: lambda: date.max - timedelta(days=1)}
 
 

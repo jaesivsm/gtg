@@ -1,4 +1,5 @@
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
+import re
 from unittest import TestCase
 
 import vobject
@@ -9,6 +10,7 @@ from GTG.backends.backend_caldav import (CATEGORIES, CHILDREN_FIELD,
 from GTG.core.datastore import DataStore
 from GTG.core.task import Task
 from mock import Mock, patch
+from GTG.core.dates import LOCAL_TIMEZONE, UTC
 from tests.test_utils import MockTimer
 
 NAMESPACE = 'unittest'
@@ -140,10 +142,28 @@ class CalDAVTest(TestCase):
         for field in Translator.fields:
             self.assertTrue(field.is_equal(task, NAMESPACE, vtodo=vtodo.vtodo),
                             '%r has differing values' % field)
-        del vtodo.vtodo.contents['due']
         serialized = vtodo.serialize()
         self.assertTrue(f"DTSTART;VALUE=DATE:{today.strftime('%Y%m%d')}"
                         in serialized, f"missing from {serialized}")
+        self.assertTrue(re.search(r"COMPLETED:[0-9]{8}T[0-9]{6}Z",
+                                  serialized), f"missing from {serialized}")
+        self.assertTrue("DUE;GTGFUZZY=soon" in serialized,
+                        f"missing from {serialized}")
+        # trying to fill utc only with fuzzy
+        task.set_closed_date('someday')
+        vtodo = Translator.fill_vtodo(task, 'My Calendar Name', NAMESPACE)
+        serialized = vtodo.serialize()
+        self.assertTrue("COMPLETED;GTGFUZZY=someday:" in serialized,
+                        f"missing from {serialized}")
+        # trying to fill utc only with date
+        task.set_closed_date(today)
+        vtodo = Translator.fill_vtodo(task, 'My Calendar Name', NAMESPACE)
+        serialized = vtodo.serialize()
+        today_in_utc = now.replace(hour=0, minute=0, second=0)\
+            .replace(tzinfo=LOCAL_TIMEZONE).astimezone(UTC)\
+            .strftime('%Y%m%dT%H%M%SZ')
+        self.assertTrue(f"COMPLETED:{today_in_utc}" in serialized,
+                        f"missing {today_in_utc} from {serialized}")
 
     def test_translate(self):
         datastore = DataStore()

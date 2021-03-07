@@ -467,12 +467,13 @@ class DateField(Field):
      * naive and at local timezone when in GTG
      * naive or not at UTC timezone from CalDAV
     """
+    FUZZY_MARK = 'GTGFUZZY'
 
     def __init__(self, dav_name: str,
                  task_get_func_name: str, task_set_func_name: str):
         super().__init__(
             dav_name, task_get_func_name, task_set_func_name,
-            ['', None, 'None', Date.no_date(), Date.someday()])
+            ['', None, 'None', Date.no_date()])
 
     @staticmethod
     def _normalize(value):
@@ -485,12 +486,19 @@ class DateField(Field):
         except AttributeError:
             return value
 
+    @staticmethod
+    def _get_dt_for_dav_writing(value):
+        if isinstance(value, Date):
+            if value.accuracy is Accuracy.fuzzy:
+                return str(value), value.dt_by_accuracy(Accuracy.date)
+            if value.accuracy in {Accuracy.timezone, Accuracy.datetime,
+                                  Accuracy.date}:
+                return '', value.dt_value
+        return '', value
+
     def write_dav(self, vtodo: iCalendar, value):
         "Writing datetime as UTC naive"
-        if isinstance(value, Date) and value.accuracy in {Accuracy.timezone,
-                                                          Accuracy.datetime,
-                                                          Accuracy.date}:
-            value = value.dt_value
+        fuzzy_value, value = self._get_dt_for_dav_writing(value)
         if isinstance(value, datetime):
             value = self._normalize(value)
             if not value.tzinfo:  # considering naive is local tz
@@ -500,12 +508,19 @@ class DateField(Field):
         vtodo_val = super().write_dav(vtodo, value)
         if isinstance(value, date) and not isinstance(value, datetime):
             vtodo_val.params['VALUE'] = ['DATE']
+        if fuzzy_value:
+            vtodo_val.params[self.FUZZY_MARK] = [fuzzy_value]
         return vtodo_val
 
     def get_dav(self, todo=None, vtodo=None):
         """Transforming to local naive,
         if original value MAY be naive and IS assuming UTC"""
         value = super().get_dav(todo, vtodo)
+        if todo:
+            vtodo = todo.instance.vtodo
+        todo_value = vtodo.contents.get(self.dav_name)
+        if todo_value and todo_value[0].params.get(self.FUZZY_MARK):
+            return Date(todo_value[0].params[self.FUZZY_MARK][0])
         if isinstance(value, (date, datetime)):
             value = self._normalize(value)
         try:
@@ -526,14 +541,19 @@ class DateField(Field):
 
 class UTCDateTimeField(DateField):
 
-    def get_gtg(self, task: Task, namespace: str = None):
-        gtg_date = super().get_gtg(task, namespace)
-        return Date(gtg_date.dt_by_accuracy(Accuracy.timezone))
-
-    def write_dav(self, vtodo: iCalendar, value):
+    @staticmethod
+    def _get_dt_for_dav_writing(value):
+        if str(value) == 'soon':
+            import ipdb
+            ipdb.sset_trace()
         if isinstance(value, Date):
-            value = value.dt_by_accuracy(Accuracy.timezone)
-        return super().write_dav(vtodo, value)
+            if value.accuracy is Accuracy.timezone:
+                return '', value.dt_value
+            if value.accuracy is Accuracy.fuzzy:
+                return str(value), value.dt_by_accuracy(Accuracy.timezone)
+        else:
+            value = Date(value)
+        return '', value.dt_by_accuracy(Accuracy.timezone)
 
 
 class Status(Field):
@@ -934,6 +954,9 @@ class Translator:
             if field.dav_name == 'uid' and UID_FIELD.get_dav(vtodo=vtodo):
                 # not overriding if already set from cache
                 continue
+            if field.dav_name == 'completed' and str(task.get_closed_date()) == 'soon':
+                import ipdb
+                ipdb.sset_trace()
             field.set_dav(task, vtodo, namespace)
         # NOTE: discarding related-to parent from sync down
         # due to bug on set_parent
