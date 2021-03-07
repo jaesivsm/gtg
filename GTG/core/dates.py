@@ -111,7 +111,7 @@ class Date:
       - a string containing a locale format date.
     """
 
-    __slots__ = ['dt_value', '_accuracy']
+    __slots__ = ['dt_value']
 
     def __init__(self, value=None):
         self.dt_value = None
