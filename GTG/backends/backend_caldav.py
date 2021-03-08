@@ -482,9 +482,9 @@ class DateField(Field):
                 return None
             if getattr(value, 'microsecond'):
                 value = value.replace(microsecond=0)
-            return value
         except AttributeError:
-            return value
+            pass
+        return value
 
     @staticmethod
     def _get_dt_for_dav_writing(value):
@@ -543,9 +543,6 @@ class UTCDateTimeField(DateField):
 
     @staticmethod
     def _get_dt_for_dav_writing(value):
-        if str(value) == 'soon':
-            import ipdb
-            ipdb.sset_trace()
         if isinstance(value, Date):
             if value.accuracy is Accuracy.timezone:
                 return '', value.dt_value
@@ -954,9 +951,6 @@ class Translator:
             if field.dav_name == 'uid' and UID_FIELD.get_dav(vtodo=vtodo):
                 # not overriding if already set from cache
                 continue
-            if field.dav_name == 'completed' and str(task.get_closed_date()) == 'soon':
-                import ipdb
-                ipdb.sset_trace()
             field.set_dav(task, vtodo, namespace)
         # NOTE: discarding related-to parent from sync down
         # due to bug on set_parent
