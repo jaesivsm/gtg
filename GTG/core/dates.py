@@ -23,12 +23,12 @@ someday, later or no date.
 
 Date.parse() parses all possible representations of a date. """
 
-from enum import Enum
 import calendar
-from datetime import datetime, date, timedelta, timezone
 import locale
-
-from gettext import gettext as _, ngettext
+from datetime import date, datetime, timedelta, timezone
+from enum import Enum
+from gettext import gettext as _
+from gettext import ngettext
 
 __all__ = ['Date']
 

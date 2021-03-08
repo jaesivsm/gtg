@@ -1,16 +1,17 @@
-from datetime import date, datetime
 import re
+from datetime import date, datetime
 from unittest import TestCase
 
 import vobject
 from caldav.lib.error import NotFoundError
+from dateutil.tz import UTC
 from GTG.backends.backend_caldav import (CATEGORIES, CHILDREN_FIELD,
-                                         DAV_IGNORE, UID_FIELD, Backend,
-                                         Translator, PARENT_FIELD)
+                                         DAV_IGNORE, PARENT_FIELD, UID_FIELD,
+                                         Backend, Translator)
 from GTG.core.datastore import DataStore
+from GTG.core.dates import LOCAL_TIMEZONE
 from GTG.core.task import Task
 from mock import Mock, patch
-from GTG.core.dates import LOCAL_TIMEZONE, UTC
 from tests.test_utils import MockTimer
 
 NAMESPACE = 'unittest'

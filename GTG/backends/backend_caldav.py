@@ -20,19 +20,19 @@
 """
 Backend for storing/loading tasks in CalDAV Tasks
 """
-import re
 import logging
-from hashlib import md5
+import re
 from collections import defaultdict
-from datetime import datetime, date
-from dateutil.tz import UTC
+from datetime import date, datetime
 from gettext import gettext as _
+from hashlib import md5
 
 import caldav
+from dateutil.tz import UTC
 from GTG.backends.backend_signals import BackendSignals
 from GTG.backends.generic_backend import GenericBackend
 from GTG.backends.periodic_import_backend import PeriodicImportBackend
-from GTG.core.dates import LOCAL_TIMEZONE, Date, Accuracy
+from GTG.core.dates import LOCAL_TIMEZONE, Accuracy, Date
 from GTG.core.interruptible import interruptible
 from GTG.core.task import DisabledSyncCtx, Task
 from vobject import iCalendar
