@@ -629,10 +629,6 @@ class Categories(Field):
                     categories.append(category)
         return categories
 
-    def write_dav(self, vtodo: iCalendar, value):
-        super().write_dav(vtodo, [category.lstrip('@') for category in value
-                                  if not category.lstrip('@').startswith(DAV_TAG_PREFIX)])
-
     def set_gtg(self, todo: iCalendar, task: Task,
                 namespace: str = None) -> None:
         remote_tags = [self.to_tag(categ) for categ in self.get_dav(todo)]
@@ -904,7 +900,8 @@ class Recurrence(Field):
 DTSTART = DateField('dtstart', 'get_start_date', 'set_start_date')
 UID_FIELD = Field('uid', 'get_uuid', 'set_uuid')
 SEQUENCE = Sequence('sequence', '<fake attribute>', '')
-CATEGORIES = Categories('categories', 'get_tags_name', 'set_tags')
+CATEGORIES = Categories('categories', 'get_tags_name', 'set_tags',
+                        ignored_values=[[]])
 PARENT_FIELD = RelatedTo('related-to', 'get_parents', 'set_parent',
                          task_remove_func_name='remove_parent',
                          reltype='parent')

@@ -9,7 +9,7 @@ from GTG.backends.backend_caldav import (CATEGORIES, CHILDREN_FIELD,
                                          DAV_IGNORE, PARENT_FIELD, UID_FIELD,
                                          Backend, Translator)
 from GTG.core.datastore import DataStore
-from GTG.core.dates import LOCAL_TIMEZONE
+from GTG.core.dates import LOCAL_TIMEZONE, Date
 from GTG.core.task import Task
 from mock import Mock, patch
 from tests.test_utils import MockTimer
@@ -165,6 +165,16 @@ class CalDAVTest(TestCase):
             .strftime('%Y%m%dT%H%M%SZ')
         self.assertTrue(f"COMPLETED:{today_in_utc}" in serialized,
                         f"missing {today_in_utc} from {serialized}")
+        # emptying date by setting None or no_date
+        task.set_closed_date(Date.no_date())
+        task.set_due_date(None)
+        task.set_start_date('')
+        vtodo = Translator.fill_vtodo(task, 'My Calendar Name', NAMESPACE)
+        serialized = vtodo.serialize()
+        self.assertTrue("CATEGORIES:" not in serialized)
+        self.assertTrue("COMPLETED:" not in serialized)
+        self.assertTrue("DUE:" not in serialized)
+        self.assertTrue("DTSTART:" not in serialized)
 
     def test_translate(self):
         datastore = DataStore()
