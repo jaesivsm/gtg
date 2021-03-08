@@ -26,7 +26,6 @@ Date.parse() parses all possible representations of a date. """
 from enum import Enum
 import calendar
 from datetime import datetime, date, timedelta, timezone
-from dateutil.tz import UTC
 import locale
 
 from gettext import gettext as _, ngettext
